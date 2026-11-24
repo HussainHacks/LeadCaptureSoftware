@@ -52,7 +52,10 @@ router = APIRouter(
 )
 
 DEMO_ORG_SLUG = "apex-air"
-DEMO_PASSWORD = "Password123!"
+# Placeholder only. Set a private demo password here before seeding any
+# instance that other people can reach, and never deploy with demo endpoints
+# enabled in a production environment.
+DEMO_PASSWORD = "change-me-demo-password"
 
 
 @router.get("/info", response_model=dict[str, Any])

@@ -1,15 +1,12 @@
 """Authorization context data structures for service-layer operations.
 
-IMPORTANT ARCHITECTURAL NOTICE:
-There is currently no public authentication middleware (e.g. JWT tokens, session
-cookies, OAuth providers) implemented in this platform. The ActorContext structure
-represents the explicit authorization identity passed to internal service-layer
-methods.
-
-Checking an actor's role against OrganizationMembership in the service layer
-validates permissions for that identity, but DOES NOT authenticate that the caller
-actually owns or controls that identity. Secure cryptographic identity authentication
-must be enforced in Phase 3 at the FastAPI middleware boundary (e.g. get_current_user).
+ARCHITECTURAL NOTE:
+Callers are authenticated at the FastAPI boundary: app.api.deps.get_current_user
+validates the JWT bearer token, checks revocation, and resolves the caller's
+active OrganizationMembership before any service runs. The ActorContext
+structure below is the verified identity that boundary hands to internal
+service-layer methods, which additionally check the actor's role against
+OrganizationMembership for each operation.
 """
 
 import uuid
