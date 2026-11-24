@@ -1,0 +1,127 @@
+name: leadgen
+
+services:
+  # ============================================================================
+  # 1. PostgreSQL 16 - Authoritative Relational Database
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: leadgen-postgres
+    restart: unless-stopped
+    ports:
+      # Strictly bind to localhost to prevent external network access
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-leadgen}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/01-init-n8n.sql:/docker-entrypoint-initdb.d/01-init-n8n.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-leadgen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+    networks:
+      - leadgen-network
+
+  # ============================================================================
+  # 2. Redis 7 - Fast In-Memory Cache and Outbox Queue Broker
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: leadgen-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      # Strictly bind to localhost
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    networks:
+      - leadgen-network
+
+  # ============================================================================
+  # 3. n8n - Workflow Automation Engine (Pinned Stable Version with PostgreSQL)
+  # ============================================================================
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.46.7
+    container_name: leadgen-n8n
+    restart: unless-stopped
+    ports:
+      # Strictly bind to localhost; no public exposure or tunnels
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    environment:
+      N8N_PORT: 5678
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      # Database Backend: PostgreSQL
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_POSTGRES_DB:-n8n}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-postgres}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_password}
+      # Security & Development Configuration
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-replace-with-secure-32-char-encryption-key}
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_RUNNERS_ENABLED: "true"
+      EXECUTIONS_DATA_SAVE_ON_ERROR: "all"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: "all"
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "true"
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      GENERIC_TIMEZONE: "UTC"
+      TZ: "UTC"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+    networks:
+      - leadgen-network
+
+networks:
+  leadgen-network:
+    name: leadgen-network
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: leadgen_postgres_data
+  redis_data:
+    name: leadgen_redis_data
+  n8n_data:
+    name: leadgen_n8n_data
