@@ -14,12 +14,21 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [seedStatus, setSeedStatus] = useState<string | null>(null);
   const [demoAvailable, setDemoAvailable] = useState(false);
+  const [demoCreds, setDemoCreds] = useState<Record<string, { email: string; password: string }> | null>(null);
 
   useEffect(() => {
     api.demo
       .info()
-      .then(() => setDemoAvailable(true))
-      .catch(() => setDemoAvailable(false));
+      .then((res) => {
+        setDemoAvailable(true);
+        if (res?.credentials) {
+          setDemoCreds(res.credentials);
+        }
+      })
+      .catch(() => {
+        setDemoAvailable(false);
+        setDemoCreds(null);
+      });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,9 +44,11 @@ export default function LoginPage() {
     }
   };
 
-  const handleFillDemo = (demoEmail: string) => {
-    setEmail(demoEmail);
-    setPassword("Password123!");
+  const handleFillDemo = (roleKey: "owner" | "dispatcher" | "technician") => {
+    const entry = demoCreds?.[roleKey];
+    if (!entry) return;
+    setEmail(entry.email);
+    setPassword(entry.password);
     setError(null);
   };
 
@@ -45,10 +56,12 @@ export default function LoginPage() {
     setLoading(true);
     setSeedStatus(null);
     try {
-      const res = await api.demo.seed();
+      await api.demo.seed();
       setSeedStatus("Demo dataset successfully seeded! Ready to sign in.");
-      setEmail("owner@apexair.com");
-      setPassword("Password123!");
+      if (demoCreds?.owner) {
+        setEmail(demoCreds.owner.email);
+        setPassword(demoCreds.owner.password);
+      }
     } catch (err: any) {
       setError(`Seed error: ${err.message}`);
     } finally {
@@ -131,21 +144,21 @@ export default function LoginPage() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => handleFillDemo("owner@apexair.com")}
+                  onClick={() => handleFillDemo("owner")}
                   className="px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-[11px] text-slate-300 hover:border-blue-500 hover:text-blue-400 font-medium transition-colors"
                 >
                   Owner
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleFillDemo("dispatcher@apexair.com")}
+                  onClick={() => handleFillDemo("dispatcher")}
                   className="px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-[11px] text-slate-300 hover:border-blue-500 hover:text-blue-400 font-medium transition-colors"
                 >
                   Dispatcher
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleFillDemo("tech@apexair.com")}
+                  onClick={() => handleFillDemo("technician")}
                   className="px-2 py-1.5 rounded bg-slate-950 border border-slate-800 text-[11px] text-slate-300 hover:border-blue-500 hover:text-blue-400 font-medium transition-colors"
                 >
                   Technician

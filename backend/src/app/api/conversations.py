@@ -17,8 +17,10 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.safety import is_help_keyword, is_opt_out_keyword
+from app.integrations.sms import get_sms_sender
 from app.models.enums import (
     AutomationEventType,
+    ChannelType,
     ConversationStatus,
     DeliveryStatus,
     MessageSender,
@@ -211,11 +213,33 @@ async def send_outbound_message(
     )
 
     try:
+        conv_service = ConversationService(session, membership.organization_id)
+        lead_repo = LeadRepository(session)
+
         msg = await msg_service.create_outbound_message(
             conversation_id,
             request.message_content,
             sender=sender_enum,
         )
+
+        # Dispatch via configured SMS sender (Twilio when configured, Simulated by default)
+        conv = await conv_service.get_conversation(conversation_id)
+        lead = await lead_repo.get_by_id(membership.organization_id, conv.lead_id)
+        if conv.channel == ChannelType.SMS.value and lead is not None:
+            sms_res = await get_sms_sender().send_sms(
+                to_phone=lead.phone,
+                body=msg.message_content,
+            )
+            if sms_res.external_message_id:
+                msg.external_message_id = sms_res.external_message_id
+            await msg_service.update_delivery_status(
+                msg.id,
+                DeliveryStatus.SENT if sms_res.success else DeliveryStatus.FAILED,
+                metadata={
+                    **sms_res.metadata,
+                    **({"error": sms_res.error_message} if sms_res.error_message else {}),
+                },
+            )
 
         # Publish MESSAGE_SENT outbox event
         await outbox_service.publish_event(
@@ -226,6 +250,7 @@ async def send_outbound_message(
                 "message_id": str(msg.id),
                 "conversation_id": str(conversation_id),
                 "sender": msg.sender,
+                "delivery_status": msg.delivery_status,
                 "content_preview": msg.message_content[:100],
             },
         )
@@ -350,6 +375,22 @@ async def simulate_inbound_customer_message(
                     sender=MessageSender.AI_AGENT,
                 )
                 ai_reply_generated = True
+
+                lead = await LeadRepository(session).get_by_id(
+                    membership.organization_id, conv.lead_id
+                )
+                if conv.channel == ChannelType.SMS.value and lead is not None:
+                    sms_res = await get_sms_sender().send_sms(
+                        to_phone=lead.phone,
+                        body=ai_msg.message_content,
+                    )
+                    if sms_res.external_message_id:
+                        ai_msg.external_message_id = sms_res.external_message_id
+                    await msg_service.update_delivery_status(
+                        ai_msg.id,
+                        DeliveryStatus.SENT if sms_res.success else DeliveryStatus.FAILED,
+                        metadata=sms_res.metadata,
+                    )
 
                 await outbox_service.publish_event(
                     event_type=AutomationEventType.MESSAGE_SENT,

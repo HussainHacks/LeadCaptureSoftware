@@ -35,14 +35,20 @@ from app.models.service import Service
 from app.models.user import User
 
 
-def _ensure_demo_enabled() -> None:
-    """Reject demo endpoints when running in production configuration."""
+def _ensure_demo_enabled() -> str:
+    """Verify demo mode is explicitly enabled and DEMO_PASSWORD is configured."""
     settings = get_settings()
-    if settings.ENVIRONMENT.lower() == "production":
+    if not settings.DEMO_ENABLED or settings.ENVIRONMENT.lower() == "production":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo endpoints are disabled in production configuration.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found.",
         )
+    if not settings.DEMO_PASSWORD or not settings.DEMO_PASSWORD.strip():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DEMO_PASSWORD must be configured when DEMO_ENABLED is true.",
+        )
+    return settings.DEMO_PASSWORD
 
 
 router = APIRouter(
@@ -52,15 +58,12 @@ router = APIRouter(
 )
 
 DEMO_ORG_SLUG = "apex-air"
-# Placeholder only. Set a private demo password here before seeding any
-# instance that other people can reach, and never deploy with demo endpoints
-# enabled in a production environment.
-DEMO_PASSWORD = "change-me-demo-password"
 
 
 @router.get("/info", response_model=dict[str, Any])
 async def get_demo_info() -> dict[str, Any]:
     """Retrieve demo accounts, credentials, and test scenario presets."""
+    demo_password = _ensure_demo_enabled()
     return {
         "organization": {
             "name": "Apex Air Heating & Cooling",
@@ -68,15 +71,15 @@ async def get_demo_info() -> dict[str, Any]:
             "service_area_zips": ["75001", "75002", "75003", "75004", "75005"],
         },
         "credentials": {
-            "owner": {"email": "owner@apexair.com", "password": DEMO_PASSWORD, "role": "owner"},
+            "owner": {"email": "owner@apexair.com", "password": demo_password, "role": "owner"},
             "dispatcher": {
                 "email": "dispatcher@apexair.com",
-                "password": DEMO_PASSWORD,
+                "password": demo_password,
                 "role": "dispatcher",
             },
             "technician": {
                 "email": "tech@apexair.com",
-                "password": DEMO_PASSWORD,
+                "password": demo_password,
                 "role": "technician",
             },
         },
@@ -126,6 +129,8 @@ async def seed_demo_data(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
     """Seed comprehensive HVAC contractor demo data."""
+    demo_password = _ensure_demo_enabled()
+
     # 1. Check if demo organization already exists
     stmt = select(Organization).where(Organization.slug == DEMO_ORG_SLUG)
     existing_org = (await session.execute(stmt)).scalar_one_or_none()
@@ -161,7 +166,7 @@ async def seed_demo_data(
     await session.flush()
 
     # 3. Create Users & Memberships
-    hashed_pwd = hash_password(DEMO_PASSWORD)
+    hashed_pwd = hash_password(demo_password)
     user_specs = [
         ("owner@apexair.com", "Robert", "Sterling", UserRole.OWNER),
         ("dispatcher@apexair.com", "Jessica", "Vance", UserRole.DISPATCHER),
@@ -616,8 +621,8 @@ async def seed_demo_data(
         "users_seeded": 3,
         "services_seeded": 5,
         "credentials": {
-            "owner": "owner@apexair.com / Password123!",
-            "dispatcher": "dispatcher@apexair.com / Password123!",
-            "technician": "tech@apexair.com / Password123!",
+            "owner": "owner@apexair.com",
+            "dispatcher": "dispatcher@apexair.com",
+            "technician": "tech@apexair.com",
         },
     }

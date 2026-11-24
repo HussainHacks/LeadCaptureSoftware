@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -78,6 +78,19 @@ class Settings(BaseSettings):
     # Internal Security
     INTERNAL_API_KEY: str = "dev-internal-key"
     LOG_LEVEL: str = "INFO"
+
+    # Demo Mode (strictly disabled by default; never enable in production)
+    DEMO_ENABLED: bool = False
+    DEMO_PASSWORD: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_demo_mode(self) -> "Settings":
+        if self.DEMO_ENABLED:
+            if self.ENVIRONMENT.lower() == "production":
+                raise ValueError("DEMO_ENABLED must never be true in production.")
+            if not self.DEMO_PASSWORD or not self.DEMO_PASSWORD.strip():
+                raise ValueError("DEMO_PASSWORD must be set when DEMO_ENABLED is true.")
+        return self
 
 
 @lru_cache

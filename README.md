@@ -6,9 +6,9 @@ deterministic rules engine, opens an SMS style conversation thread, and helps a
 dispatcher book the appointment, all from one dashboard.
 
 > Status: working MVP. Authentication, tenancy, lead management, qualification,
-> conversations, appointments and analytics are implemented and covered by a
-> 146 test backend suite. Outbound messaging, AI qualification and workflow
-> automation currently run in simulated mode (see "What is simulated" below).
+> conversations, appointments, public website lead capture, and Twilio/simulated
+> outbound SMS are implemented. AI qualification and outbox event dispatch
+> currently run in deterministic/simulated mode (see "What is simulated" below).
 
 ## Who it is for
 
@@ -20,16 +20,18 @@ isolated tenant organization with its own users, roles, leads and data.
 
 - Organization sign up and JWT login with owner, admin, dispatcher and
   technician roles
+- Public unauthenticated website lead capture (`POST /api/public/leads`) with
+  site-key tenant resolution, sanitization, honeypot spam trap, and rate limiting
 - Lead intake with phone normalization, email validation and SMS consent
   tracking (opt in and opt out honored, STOP keyword locks automation)
 - Deterministic lead qualification with category, score, reasoning and a
   safety hazard screen (for example gas leak reports are escalated, never
   auto handled)
-- Conversation threads per lead with assignment, escalation and human takeover
+- Conversation threads per lead with assignment, escalation, human takeover,
+  and Twilio SMS outbound delivery (simulated fallback when unconfigured)
 - Appointment booking, rescheduling and cancellation
 - Dashboard and analytics endpoints, transactional outbox for event delivery
-- One command demo dataset so a buyer can click through a realistic
-  contractor business in minutes
+- Optional gated demo dataset (`DEMO_ENABLED=true`) for local evaluations
 
 ## Screenshots
 
@@ -75,12 +77,11 @@ Prerequisites: Docker (for Postgres, Redis and n8n), Python 3.12 with
 
    The dashboard is at http://localhost:3000
 
-5. Optional demo data: with the backend running in a non production
-   environment, `POST /api/demo/seed` creates a sample contractor
-   ("Apex Air Heating & Cooling") and `GET /api/demo/info` lists the demo
-   logins and test scenarios. Change the demo password in
-   `backend/src/app/api/demo.py` before sharing an instance, and never expose
-   the demo endpoints on a public deployment.
+5. Optional demo data: demo mode is **disabled by default** (`DEMO_ENABLED=false`).
+   To enable it in local development, set `DEMO_ENABLED=true` and `DEMO_PASSWORD`
+   in `.env` (never enable demo mode in production). Then `POST /api/demo/seed`
+   creates a sample contractor ("Apex Air Heating & Cooling") and
+   `GET /api/demo/info` lists the demo logins and test scenarios.
 
 ## Configuration
 
@@ -93,21 +94,31 @@ full annotated list. The important ones:
 | `DATABASE_URL` | Async Postgres connection string for the API |
 | `REDIS_URL` | Redis connection for token revocation and queues |
 | `AI_PROVIDER` / `OPENAI_API_KEY` | Reserved for AI qualification (see below) |
-| `MESSAGING_MODE` | `simulated` or `twilio` |
+| `MESSAGING_MODE` | `simulated` (default) or `twilio` (requires `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`) |
 | `CALENDAR_MODE` | `simulated` or `google_calendar` |
-| `ENVIRONMENT` | Set to `production` to disable the demo endpoints |
+| `DEMO_ENABLED` / `DEMO_PASSWORD` | `false` by default; both must be set to expose `/api/demo/*` (never in production) |
+| `ENVIRONMENT` | Set to `production` to enforce production guards |
 
 ## What is simulated in this MVP
 
 Being straight about the boundary between real and simulated matters more than
 a long feature list:
 
-- Event dispatch through the outbox is simulation only. No live Twilio SMS,
-  OpenAI calls or n8n webhooks fire yet; the dispatcher, retries and audit
-  trail are real, the external sends are stubbed behind mode flags.
-- Lead qualification is a deterministic rules engine, not an LLM call. The
+- **Public website lead capture is real**: `POST /api/public/leads` accepts
+  unauthenticated website embed submissions using a contractor `X-Site-Key` /
+  `X-API-Key`, validates and sanitizes inputs, applies rate limiting and a
+  honeypot spam field, and runs the full lead intake and qualification flow.
+- **Outbound SMS supports real Twilio delivery**: When `MESSAGING_MODE=twilio`
+  and `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER` are
+  configured, outbound messages on SMS conversations send through the Twilio
+  REST API and log delivery status and receipt SIDs on the conversation thread.
+  When Twilio credentials are absent, it defaults to the local simulated sender.
+- **Event dispatch through the outbox is simulation only**: No OpenAI calls or
+  external n8n webhooks fire yet; the outbox claiming, retries, lease fencing,
+  and audit trail are real, while external outbox dispatches are stubbed.
+- **Lead qualification is a deterministic rules engine**, not an LLM call. The
   OpenAI settings exist for the planned AI mode.
-- The `automation/` folder and the n8n service are scaffolding: n8n runs, but
+- **The `automation/` folder and n8n service are scaffolding**: n8n runs, but
   no production workflows ship in this repo yet.
 
 ## Project structure
@@ -115,11 +126,11 @@ a long feature list:
 ```text
 backend/         FastAPI API (Python 3.12, SQLAlchemy async, Alembic, pytest)
   src/app/       api routers, core, models, schemas, repositories, services
-  tests/         146 tests (most need a running Postgres, see backend/README)
+  tests/         146+ tests (most need a running Postgres, see backend/README)
 frontend/        Next.js 16 dashboard (React 19, Tailwind 4, TypeScript)
 infrastructure/  docker-compose for Postgres 16, Redis 7 and n8n
 automation/      planned n8n workflow exports (empty in this MVP)
-docs/            additional documentation (empty in this MVP)
+docs/            additional documentation
 .env.example     annotated environment template
 ```
 
