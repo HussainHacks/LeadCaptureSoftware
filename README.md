@@ -35,7 +35,14 @@ isolated tenant organization with its own users, roles, leads and data.
 
 ## Screenshots
 
-<!-- TODO: add screenshots of the dashboard, leads table and conversation view -->
+### Contractor Operations Dashboard
+![Contractor Operations Dashboard](docs/screenshots/dashboard.jpeg)
+
+### Lead Management & Qualification
+![Lead Management and Qualification](docs/screenshots/leads.jpeg)
+
+### Conversation Thread, Safety Lockout & Simulation Sandbox
+![Conversation Safety Lockout and Simulation Sandbox](docs/screenshots/conversation-safety.jpeg)
 
 ## Quick start
 
