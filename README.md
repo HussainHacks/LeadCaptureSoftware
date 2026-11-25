@@ -149,4 +149,4 @@ metadata tests also pass without a database.
 
 ## License
 
-All rights reserved. This is proprietary software; contact the owner for licensing.
+Copyright (c) 2026 Syed Ahmed Hussain. All rights reserved. This is proprietary software; contact the owner for licensing.
